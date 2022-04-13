@@ -1,6 +1,6 @@
 {
   "name": "http-request",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Basic HTTP request structured as a class.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
