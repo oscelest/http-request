@@ -1,57 +1,57 @@
 {
-  "name":            "http-request",
-  "version":         "0.0.0",
-  "description":     "Basic HTTP request structured as a class.",
-  "main":            "dist/cjs/index.js",
-  "module":          "dist/esm/index.js",
-  "umd:main":        "dist/umd/index.js",
-  "types":           "dist/types/index.d.js",
-  "scripts":         {
-    "build":         "npm run build:cjs && npm run build:esm && npm run build:umd && npm run build:types",
-    "build:cjs":     "tsc -p ./config/tsconfig.cjs.json",
-    "build:esm":     "tsc -p ./config/tsconfig.esm.json",
-    "build:umd":     "set NODE_OPTIONS=--openssl-legacy-provider && webpack --config config/webpack.config.js",
-    "build:types":   "tsc -p ./config/tsconfig.types.json",
-    "clean":         "npm run clean:cjs && npm run clean:esm && npm run clean:umd && npm run clean:types",
-    "clean:cjs":     "tsc --build --clean ./config/tsconfig.cjs.json",
-    "clean:esm":     "tsc --build --clean ./config/tsconfig.esm.json",
-    "clean:umd":     "tsc --build --clean ./config/tsconfig.umd.json",
-    "clean:types":   "tsc --build --clean ./config/tsconfig.types.json",
-    "rebuild":       "npm run rebuild:cjs && npm run rebuild:esm && npm run rebuild:umd && npm run rebuild:types",
-    "rebuild:cjs":   "npm run clean:cjs && npm run build:cjs",
-    "rebuild:esm":   "npm run clean:esm && npm run build:esm",
-    "rebuild:umd":   "npm run clean:umd && npm run build:umd",
+  "name": "http-request",
+  "version": "0.1.0",
+  "description": "Basic HTTP request structured as a class.",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "umd:main": "dist/umd/index.js",
+  "types": "dist/types/index.d.js",
+  "scripts": {
+    "build": "npm run build:cjs && npm run build:esm && npm run build:umd && npm run build:types",
+    "build:cjs": "tsc -p ./config/tsconfig.cjs.json",
+    "build:esm": "tsc -p ./config/tsconfig.esm.json",
+    "build:umd": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --config config/webpack.config.js",
+    "build:types": "tsc -p ./config/tsconfig.types.json",
+    "clean": "npm run clean:cjs && npm run clean:esm && npm run clean:umd && npm run clean:types",
+    "clean:cjs": "tsc --build --clean ./config/tsconfig.cjs.json",
+    "clean:esm": "tsc --build --clean ./config/tsconfig.esm.json",
+    "clean:umd": "tsc --build --clean ./config/tsconfig.umd.json",
+    "clean:types": "tsc --build --clean ./config/tsconfig.types.json",
+    "rebuild": "npm run rebuild:cjs && npm run rebuild:esm && npm run rebuild:umd && npm run rebuild:types",
+    "rebuild:cjs": "npm run clean:cjs && npm run build:cjs",
+    "rebuild:esm": "npm run clean:esm && npm run build:esm",
+    "rebuild:umd": "npm run clean:umd && npm run build:umd",
     "rebuild:types": "npm run clean:types && npm run build:types",
-    "package":       "npm run build && npm pack",
-    "test":          "npm run rebuild:umd && jest --no-cache --runInBand",
-    "test:cov":      "jest --coverage --no-cache --runInBand"
+    "package": "npm run build && npm pack",
+    "test": "npm run rebuild:umd && jest --no-cache --runInBand",
+    "test:cov": "jest --coverage --no-cache --runInBand"
   },
-  "publishConfig":   {
+  "publishConfig": {
     "access": "public"
   },
-  "files":           [
+  "files": [
     "dist"
   ],
-  "author":          "oscelest",
-  "license":         "MIT",
-  "repository":      {
+  "author": "oscelest",
+  "license": "MIT",
+  "repository": {
     "type": "git",
-    "url":  "git@github.com:oscelest/http-request.git"
+    "url": "git@github.com:oscelest/http-request.git"
   },
-  "bugs":            {
+  "bugs": {
     "url": "https://github.com/oscelest/http-request/issues"
   },
   "devDependencies": {
-    "@noxy/http-utils":    "^0.3.0",
+    "@noxy/http-utils": "^0.3.0",
     "@noxy/utility-types": "^0.1.0",
-    "@types/jest":         "^27.4.1",
-    "@types/node":         "^17.0.23",
-    "jest":                "^27.5.1",
-    "puppeteer":           "^13.5.2",
-    "ts-jest":             "^27.1.4",
-    "ts-loader":           "^9.2.8",
-    "typescript":          "^4.6.3",
-    "webpack":             "^5.52.1",
-    "webpack-cli":         "^4.9.2"
+    "@types/jest": "^27.4.1",
+    "@types/node": "^17.0.23",
+    "jest": "^27.5.1",
+    "puppeteer": "^13.5.2",
+    "ts-jest": "^27.1.4",
+    "ts-loader": "^9.2.8",
+    "typescript": "^4.6.3",
+    "webpack": "^5.52.1",
+    "webpack-cli": "^4.9.2"
   }
 }
