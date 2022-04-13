@@ -19,10 +19,13 @@ jobs:
   get-version:
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get.outputs.version }}
     steps:
       - uses: actions/checkout@v3
       - name: Get version from tag
-        run: echo "TAG=$(echo $GITHUB_REF | sed -s 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')" >> $GITHUB_ENV
+        id: get
+        run: echo "::set-output name=version::$(echo $GITHUB_REF | sed -s 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')"
       - name: Apply version
         run: npm version $TAG --no-git-tag-version
 
@@ -37,7 +40,7 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - run: npm ci
       - run: npm run build
-      - run: npm version $TAG --no-git-tag-version --silent
+      - run: npm version ${{ needs.get-version.outputs.version }} --no-git-tag-version --silent
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
@@ -52,13 +55,13 @@ jobs:
           git config user.name "GitHub Actions Bot"
           git config user.email "<>"
       - name: Apply version
-        run: npm version $TAG --no-git-tag-version
+        run: npm version ${{ needs.get-version.outputs.version }} --no-git-tag-version
 
       - name: Add updated package.json to commit
         run: git add package.json
 
       - name: Commit changes to main branch
-        run: git commit -m "Updating version to $TAG"
+        run: git commit -m "Updating version to ${{ needs.get-version.outputs.version }}"
 
       - name: fetch from master
         run: git fetch origin main
