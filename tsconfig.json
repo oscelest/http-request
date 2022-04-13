@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports":     true,
+    "baseUrl":                          ".",
+    "esModuleInterop":                  true,
+    "forceConsistentCasingInFileNames": true,
+    "incremental":                      true,
+    "isolatedModules":                  true,
+    "module":                           "ESNext",
+    "moduleResolution":                 "Node",
+    "noFallthroughCasesInSwitch":       true,
+    "noUnusedLocals":                   true,
+    "strict":                           true,
+    "strictPropertyInitialization":     false,
+    "target":                           "ES2017",
+  },
+  "include":         [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude":         [
+    "node_modules"
+  ]
+}

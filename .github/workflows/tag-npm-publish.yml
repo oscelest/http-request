@@ -1,0 +1,60 @@
+name: Publish NPM package on Tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+      - run: npm ci
+      - run: npm test
+
+  update:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Get version from tag
+        run: echo "TAG=$(echo $GITHUB_REF | sed -s 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')" >> $GITHUB_ENV
+
+      - name: Set up GitHub Actions Bot
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "<>"
+      - name: Apply version
+        run: npm version $TAG --no-git-tag-version
+
+      - name: Add updated package.json to commit
+        run: git add package.json
+
+      - name: Commit changes to main branch
+        run: git commit -m "Updating version to $TAG"
+
+      - name: fetch from master
+        run: git fetch origin main
+
+      - name: push code to master
+        run: git push origin HEAD:main
+
+  publish-npm:
+    needs: update
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16.x'
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
