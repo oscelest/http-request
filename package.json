@@ -1,5 +1,5 @@
 {
-  "name": "http-request",
+  "name": "@noxy/http-request",
   "version": "0.0.0",
   "description": "Basic HTTP request structured as a class.",
   "main": "dist/cjs/index.js",
