@@ -1,6 +1,6 @@
 import {HTTPRequestState} from "./HTTPRequestState";
 import {NonArray} from "@noxy/utility-types";
-import {HTTPMethod, HTTPStatusCode, HTTPStatusMessage} from "@noxy/http-utils";
+import {HTTPMethod, HTTPStatusCode, HTTPStatusMessage} from "@noxy/http-utility";
 
 export class HTTPRequest<Response = any, Request extends HTTPRequestObject = {}> {
 
