@@ -27,7 +27,7 @@ jobs:
         id: get
         run: echo "::set-output name=version::$(echo $GITHUB_REF | sed -s 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')"
       - name: Apply version
-        run: npm version $TAG --no-git-tag-version
+        run: npm version ${{ steps.get.outputs.version }} --no-git-tag-version
 
   publish-npm:
     needs: get-version
@@ -46,7 +46,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
   update-version:
-    needs: publish-npm
+    needs: [get-version, publish-npm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -54,6 +54,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "<>"
+
       - name: Apply version
         run: npm version ${{ needs.get-version.outputs.version }} --no-git-tag-version
 
