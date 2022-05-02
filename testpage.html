@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Title</title>
+        <script src="./dist/umd/index.js"></script>
+        <script>
+          const {HTTPRequest} = window["http-request"];
+
+          function getRequest() {
+            const data   = {};
+            const path   = document.getElementById("url").value;
+            const method = document.getElementById("method").value;
+
+            const file = document.getElementById("file");
+            if (file.value) {
+              data.file = file.value;
+            }
+            const string = document.getElementById("string");
+            if (string.value) {
+              data.string = string.value;
+            }
+            const number = document.getElementById("number");
+            if (number.value) {
+              data.number = number.value;
+            }
+
+            return new HTTPRequest({path, method, data});
+          }
+
+          async function Call() {
+            const request = getRequest();
+            try {
+              const response = await request.send();
+              console.log("success", response);
+            } catch (error) {
+              console.log("error", error);
+            }
+          }
+
+          async function CallAndAbort() {
+            const request = getRequest();
+            try {
+              setTimeout(() => request.abort());
+              const response = await request.send();
+              console.log("success", response);
+            } catch (error) {
+              console.log("error", error);
+            }
+          }
+
+          async function CallAndTimeout() {
+            const request   = getRequest();
+            request.timeout = 1;
+            try {
+              const response = await request.send();
+              console.log("success", response);
+            } catch (error) {
+              console.log("error", error);
+            }
+          }
+        </script>
+
+    </head>
+    <body>
+        <table>
+            <tbody>
+                <tr>
+                    <td>
+                        <label for="method">
+                            Method:
+                        </label>
+                    </td>
+                    <td>
+                        <select id="method" style="width: 100%">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <label for="url">
+                            URL:
+                        </label>
+                    </td>
+                    <td>
+                        <input id="url" value="https://example.com"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <label for="file">
+                            URL:
+                        </label>
+                    </td>
+                    <td>
+                        <input id="file" name="file" type="file" multiple/>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <label for="string">
+                            String:
+                        </label>
+                    </td>
+                    <td>
+                        <input id="string" name="string"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <label for="number">
+                            Number:
+                        </label>
+                    </td>
+                    <td>
+                        <input id="number" name="number" type="number"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <button onclick="Call()">
+                            Send request
+                        </button>
+                    </td>
+
+                </tr>
+                <tr>
+                    <td>
+                        <button onclick="CallAndAbort()">
+                            Send and abort request
+                        </button>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <button onclick="CallAndTimeout()">
+                            Send and timeout request
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </body>
+</html>

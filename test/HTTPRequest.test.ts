@@ -1,6 +1,6 @@
 import HTTPRequest from "../src/HTTPRequest";
 import HTTPRequestState from "../src/HTTPRequestState";
-import HTTPMethod from "@noxy/http-utils/src/HTTPMethod";
+import {HTTPMethod} from "@noxy/http-utility";
 import Puppeteer from "puppeteer";
 
 const constants = {} as {browser: Puppeteer.Browser, page: Puppeteer.Page};
@@ -27,8 +27,8 @@ test("create", async () => {
   const result = await constants.page.evaluate(async () => {
     const HTTPRequest = window["http-request"].HTTPRequest;
     try {
-      const request = new HTTPRequest({path: "https://httpstat.us/200", method: HTTPMethod.GET});
-      return await request.init();
+      const request = new HTTPRequest({path: "https://httpstat.us/500", method: HTTPMethod.GET});
+      return await request.send();
     }
     catch (exception) {
       return exception;

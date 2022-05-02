@@ -42,7 +42,7 @@
     "url": "https://github.com/oscelest/http-request/issues"
   },
   "devDependencies": {
-    "@noxy/http-utility": "^0.1.0",
+    "@noxy/http-utility": "^0.1.2",
     "@noxy/utility-types": "^0.1.0",
     "@types/jest": "^27.4.1",
     "@types/node": "^17.0.23",
