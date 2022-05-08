@@ -1,17 +1,19 @@
 import {HTTPRequestState} from "./HTTPRequestState";
-import {HTTPMethod, HTTPHeader, HTTPStatusMessage} from "@noxy/http-utility";
+import {HTTPMethod, HTTPHeader, HTTPStatusCode} from "@noxy/http-utility";
+import HTTPResponse from "./HTTPResponse";
+import {Many, Collection} from "@noxy/utility-types";
 
 export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPRequestData> {
 
   #data?: Request;
   #path: string;
   #state: HTTPRequestState;
-  #method: HTTPMethod;
+  #method: keyof typeof HTTPMethod | HTTPMethod;
   #aborted: boolean;
   #headers: Partial<{ [K in HTTPHeader]: string }>;
   #request: XMLHttpRequest;
   #timeout?: number;
-  #promise?: Promise<HTTPRequestResponse<Response | null>>;
+  #promise?: Promise<HTTPResponse<Response>>;
   #progress: number;
 
   public onStart?: ProgressEventHandler;
@@ -42,7 +44,7 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
     this.#path = path;
   }
 
-  public set method(method: HTTPMethod) {
+  public set method(method: keyof typeof HTTPMethod | HTTPMethod) {
     this.#method = method;
   }
 
@@ -78,22 +80,11 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
     return "application/json";
   }
 
-  public async send() {
+  public async send(): Promise<HTTPResponse<Response>> {
     if (this.#promise) return this.#promise;
-    return this.#promise = new Promise<HTTPRequestResponse<Response | null>>(async (resolve, reject) => {
+    return this.#promise = new Promise<HTTPResponse<Response>>(async (resolve, reject) => {
       this.#request.timeout = this.timeout;
       this.#state = HTTPRequestState.OPENED;
-
-      const header_list = Object.getOwnPropertyNames(this.#headers) as HTTPHeader[];
-      for (let i = 0; i < header_list.length; i++) {
-        const header = header_list.at(i);
-        if (!header) continue;
-
-        const value = this.#headers[header];
-        if (!value) continue;
-
-        this.#request.setRequestHeader(header, value);
-      }
 
       this.#request.onloadstart = event => {
         if (this.#aborted) return;
@@ -110,54 +101,32 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
         if (this.#aborted) return;
         this.#state = HTTPRequestState.DONE;
         this.onComplete?.(event);
-        resolve({
-          success: this.#request.status === 200,
-          status:  this.#request.status,
-          message: this.#request.statusText,
-          state:   this.#state,
-          data:    this.#request.response
-        });
+        resolve(new HTTPResponse(this.#request.status, this.#state, this.#request.getResponseHeader(HTTPHeader.ContentType), this.#request.response));
       };
 
       this.#request.ontimeout = () => {
         if (this.#aborted) return;
         this.#state = HTTPRequestState.TIMEOUT;
-        resolve({
-          success: false,
-          status:  408,
-          message: HTTPStatusMessage["408"],
-          state:   this.#state,
-          data:    null
-        });
+        reject(new HTTPResponse(HTTPStatusCode.RequestTimeout, this.#state));
       };
 
       this.#request.onabort = () => {
         this.#state = HTTPRequestState.ABORTED;
-        reject({
-          success: false,
-          status:  0,
-          message: "Aborted",
-          state:   this.#state,
-          data:    null
-        });
+        reject(new HTTPResponse(HTTPStatusCode.Unknown, this.#state));
       };
 
       this.#request.onerror = () => {
         if (this.#aborted) return;
         this.#state = HTTPRequestState.ERROR;
-        reject({
-          success: false,
-          status:  0,
-          message: "Error",
-          state:   this.#state,
-          data:    null
-        });
+        reject(new HTTPResponse(HTTPStatusCode.Unknown, this.#state));
       };
 
       this.#state = HTTPRequestState.READY;
       const method = this.#method.toLowerCase();
       if (method !== HTTPMethod.get && method !== HTTPMethod.head) {
         this.#request.open(this.#method, this.#path);
+        this.attachHeaders();
+
         if (this.#data instanceof ArrayBuffer) {
           this.#request.setRequestHeader(HTTPHeader.ContentType, "application/octet-stream");
           this.#request.send(this.#data);
@@ -168,7 +137,7 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
         }
         else if (this.#data instanceof Document) {
           this.#request.setRequestHeader(HTTPHeader.ContentType, "text/html");
-          this.#request.send(this.#data);
+          this.#request.send(this.toBlob());
         }
         else if (this.#data instanceof FormData) {
           this.#request.setRequestHeader(HTTPHeader.ContentType, "multipart/form-data");
@@ -179,25 +148,31 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
           this.#request.send(await this.toSearchParamData());
         }
         else {
-          const content_type = this.getContentType();
+          const content_type = this.getContentType().toLowerCase();
           this.#request.setRequestHeader(HTTPHeader.ContentType, content_type);
-          switch (content_type.toLowerCase()) {
-            case "text/plain":
-            case "application/json":
-              return this.#request.send(JSON.stringify(this.#data));
-            case "application/x-www-form-urlencoded":
-              return this.#request.send(await this.toSearchParamData());
-            case "multipart/form-data":
-              return this.#request.send(await this.toFormData());
-            default:
-              throw new Error(`Could not convert data of type '${this.#data?.constructor.name}' to ContentType '${content_type}'`);
+          if (content_type.includes("text/plain") || content_type.includes("application/json")) {
+            return this.#request.send(JSON.stringify(this.#data));
           }
+          if (content_type.includes("application/x-www-form-urlencoded")) {
+            return this.#request.send(await this.toSearchParamData());
+          }
+          if (content_type.includes("multipart/form-data")) {
+            return this.#request.send(await this.toFormData());
+          }
+          if (content_type.includes("text/html")) {
+            return this.#request.send(await this.toDocument());
+          }
+          if (content_type.includes("application/octet-stream")) {
+            return this.#request.send(await this.toArrayBuffer());
+          }
+          throw new Error(`Could not convert data of type '${this.#data?.constructor.name}' to ContentType '${content_type}'`);
         }
       }
       else {
         const params = await this.toSearchParamData()?.toString();
-        this.#request.setRequestHeader(HTTPHeader.ContentType, "");
         this.#request.open(this.#method, params ? `${new URL(this.#path).origin}?${params}` : this.#path);
+        this.attachHeaders();
+        this.#request.setRequestHeader(HTTPHeader.ContentType, "");
         this.#request.send();
       }
     });
@@ -205,14 +180,62 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
 
   public abort() {
     this.#aborted = true;
+    this.#request.abort();
   }
 
-  private async toSearchParamData(): Promise<null | URLSearchParams> {
+  private attachHeaders() {
+    const method = this.#method.toLowerCase();
+    const header_list = Object.getOwnPropertyNames(this.#headers) as HTTPHeader[];
+    for (let i = 0; i < header_list.length; i++) {
+      const header = header_list.at(i);
+      if (!header) continue;
+
+      const value = this.#headers[header];
+      if (!value || method === HTTPMethod.get || method === HTTPMethod.head) continue;
+
+      this.#request.setRequestHeader(header, value);
+    }
+  }
+
+  private toDocument(): null | string | Document {
     if (this.#data === undefined || this.#data === null) return null;
-    if (this.#data instanceof URLSearchParams) return this.#data as URLSearchParams;
-    if (this.#data instanceof ArrayBuffer) return new URLSearchParams(new TextDecoder("utf-8").decode(this.#data));
-    if (this.#data instanceof Blob) return new URLSearchParams(await this.#data.text());
-    if (this.#data instanceof Document) return null;
+    if (this.#data instanceof Document) return this.#data;
+    if (this.#data instanceof ArrayBuffer) throw new Error("Cannot convert ArrayBuffer to Document");
+    if (this.#data instanceof Blob) throw new Error("Cannot convert Blob to Document");
+    if (this.#data instanceof FormData) throw new Error("Cannot convert FormData to Document");
+    if (this.#data instanceof URLSearchParams) throw new Error("Cannot convert URLSearchParams to Document");
+    if (typeof this.#data === "object") throw new Error("Cannot convert object to Document");
+    return String(this.#data);
+  }
+
+  private async toArrayBuffer(): Promise<null | ArrayBuffer> {
+    if (this.#data === undefined || this.#data === null) return null;
+    if (this.#data instanceof ArrayBuffer) return this.#data;
+    if (this.#data instanceof Blob) return await this.#data.arrayBuffer();
+    if (this.#data instanceof Document) return new TextEncoder().encode(this.#data.documentElement.outerHTML).buffer;
+    if (this.#data instanceof FormData) throw new Error("Cannot convert FormData to ArrayBuffer");
+    if (this.#data instanceof URLSearchParams) throw new Error("Cannot convert URLSearchParams to ArrayBuffer");
+    if (typeof this.#data === "object") throw new Error("Cannot convert object to ArrayBuffer");
+    return new TextEncoder().encode(String(this.#data));
+  }
+
+  private toBlob(): null | Blob {
+    if (this.#data === undefined || this.#data === null) return null;
+    if (this.#data instanceof Blob) return this.#data;
+    if (this.#data instanceof ArrayBuffer) return new Blob([this.#data]);
+    if (this.#data instanceof Document) return new Blob([this.#data.documentElement.outerHTML], {type: this.#data.contentType});
+    if (this.#data instanceof FormData) throw new Error("Cannot convert FormData to Blob");
+    if (this.#data instanceof URLSearchParams) throw new Error("Cannot convert URLSearchParams to Blob");
+    if (typeof this.#data === "object") return new Blob([JSON.stringify(this.#data)], {type: "application/json"});
+    return new Blob([String(this.#data)], {type: "text/plain"});
+  }
+
+  private toSearchParamData(): null | URLSearchParams {
+    if (this.#data === undefined || this.#data === null) return null;
+    if (this.#data instanceof URLSearchParams) return this.#data;
+    if (this.#data instanceof ArrayBuffer) throw new Error("Cannot convert ArrayBuffer to URLSearchParams.");
+    if (this.#data instanceof Blob) throw new Error("Cannot convert Blob to URLSearchParams.");
+    if (this.#data instanceof Document) return HTTPRequest.documentToURLSearchParams(this.#data);
     if (this.#data instanceof FormData) {
       const data = new URLSearchParams();
       for (let key in this.#data) {
@@ -224,6 +247,7 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
       }
       return data;
     }
+
     if (typeof this.#data === "object" && !Array.isArray(this.#data)) {
       const data = new URLSearchParams();
       for (let key in this.#data) {
@@ -246,10 +270,10 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
 
   private toFormData(): null | FormData {
     if (this.#data === undefined || this.#data === null) return null;
-    if (this.#data instanceof FormData) return this.#data as FormData;
-    if (this.#data instanceof ArrayBuffer) return null;
-    if (this.#data instanceof Blob) return null;
-    if (this.#data instanceof Document) return new FormData(this.#data.forms[0]);
+    if (this.#data instanceof FormData) return this.#data;
+    if (this.#data instanceof ArrayBuffer) throw new Error("Cannot convert ArrayBuffer to FormData.");
+    if (this.#data instanceof Blob) throw new Error("Cannot convert Blob to FormData.");
+    if (this.#data instanceof Document) return HTTPRequest.documentToFormData(this.#data);
     if (this.#data instanceof URLSearchParams) {
       const data = new FormData();
       for (let key in this.#data) {
@@ -281,6 +305,33 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
     return null;
   }
 
+  private static documentToURLSearchParams(document: Document) {
+    const form_data = this.documentToFormData(document);
+    if (!form_data) return null;
+
+    const params = new URLSearchParams();
+
+    for (let key of form_data.keys()) {
+      const item_list = form_data.getAll(key);
+      for (let j = 0; j < item_list.length; j++) {
+        const item = item_list.at(j);
+        if (item === undefined || item === null || item instanceof File) continue;
+        params.append(key, item);
+      }
+    }
+
+    return params;
+  }
+
+  private static documentToFormData(document: Document) {
+    for (let i = 0; i < document.forms.length; i++) {
+      const form = document.forms.item(i);
+      if (form) return new FormData(form);
+    }
+
+    return null;
+  }
+
   private static parseFormDataPrimitive(value?: HTTPRequestDataObjectPrimitive) {
     if (value instanceof File) return value;
     return this.parseSearchParamPrimitive(value);
@@ -288,6 +339,7 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
 
   private static parseSearchParamPrimitive(value?: HTTPRequestDataObjectPrimitive) {
     if (value instanceof File) return null;
+    if (value instanceof Date) return value.toISOString();
     if (typeof value === "string") return value;
     if (typeof value === "boolean") return value ? "1" : "0";
     if (typeof value === "bigint") return value.toString();
@@ -295,29 +347,25 @@ export class HTTPRequest<Response = any, Request extends HTTPRequestData = HTTPR
   }
 }
 
-export type HTTPRequestDataObjectPrimitive = string | boolean | number | bigint | File
+export declare interface JSONObject {
+  [key: string]: HTTPRequestDataObjectPrimitive;
+}
+
+export type HTTPRequestDataObjectPrimitive = Many<HTTPRequestDataPrimitive | Date | File | JSONObject>
 export type HTTPRequestDataPrimitive = string | boolean | number | bigint | null | undefined
 export type HTTPRequestDataNative = FormData | URLSearchParams | Document | Blob | ArrayBuffer
-export type HTTPRequestData = HTTPRequestDataPrimitive | HTTPRequestDataNative | {[key: string]: HTTPRequestDataObjectPrimitive}
+export type HTTPRequestData = HTTPRequestDataNative | HTTPRequestDataPrimitive | Collection<Many<HTTPRequestDataObjectPrimitive>>
 
 export type ProgressEventHandler = (event: ProgressEvent) => void
 
 export interface HTTPRequestInitializer<Request extends HTTPRequestData = HTTPRequestData> {
   path: string;
-  method: HTTPMethod;
+  method: keyof typeof HTTPMethod | HTTPMethod;
   data?: Request;
   timeout?: number;
   onStart?: ProgressEventHandler;
   onProgress?: ProgressEventHandler;
   onComplete?: ProgressEventHandler;
-}
-
-export interface HTTPRequestResponse<Response> {
-  success: boolean;
-  status: number;
-  state: HTTPRequestState;
-  message: string;
-  data: Response;
 }
 
 export default HTTPRequest;
