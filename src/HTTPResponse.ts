@@ -1,5 +1,6 @@
 import {HTTPRequestState} from "./HTTPRequestState";
-import {HTTPStatusCode, HTTPStatusMessage} from "@noxy/http-utility";
+import {HTTPStatusCode, HTTPStatusMessage, HTTPMethod} from "@noxy/http-utility";
+import HTTPRequest from "./HTTPRequest";
 
 export class HTTPResponse<Response = any> {
 
@@ -8,19 +9,24 @@ export class HTTPResponse<Response = any> {
   state: HTTPRequestState;
   message: string;
   data: Response | null;
+  path: string;
+  method: keyof typeof HTTPMethod | HTTPMethod;
 
-  constructor(status: HTTPStatusCode, state: HTTPRequestState, type?: string | null, data?: Response) {
+  constructor(request: HTTPRequest, status: HTTPStatusCode, data?: Response, type?: string | null) {
+    this.method = request.method;
+    this.path = request.URL;
+    this.state = request.state;
+
     this.success = status === HTTPStatusCode.OK;
     this.status = status;
-    this.state = state;
 
     if (this.status > 0) {
       this.message = HTTPStatusMessage[status];
     }
-    else if (state === HTTPRequestState.ERROR) {
+    else if (request.state === HTTPRequestState.ERROR) {
       this.message = "Error";
     }
-    else if (state === HTTPRequestState.ABORTED) {
+    else if (request.state === HTTPRequestState.ABORTED) {
       this.message = "Aborted";
     }
     else {

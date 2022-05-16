@@ -4,9 +4,6 @@ import Express from "express";
 import BodyParser from "body-parser";
 
 beforeAll(async () => {
-  Test.port = 7327;
-  Test.host = "http://localhost";
-
   Test.application = Express();
   Test.application.use(BodyParser.urlencoded({extended: false}));
   Test.application.use(BodyParser.json());
@@ -22,7 +19,7 @@ beforeAll(async () => {
     setTimeout(() => response.status(200).json(response_value), 10);
   });
 
-  Test.server = Test.application.listen(Test.port);
+  Test.server = Test.application.listen(Test.constants.port);
 
   Test.browser = await Puppeteer.launch({
     args: [
