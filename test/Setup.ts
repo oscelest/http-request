@@ -72,6 +72,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  FS.rmSync("./files", {recursive: true, force: true});
   Test.server.close();
   await Test.browser.close();
 });
