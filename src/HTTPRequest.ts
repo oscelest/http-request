@@ -65,7 +65,12 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
 
   public set headers(headers: Partial<{ [K in HTTPHeader]: string }>) {
     if (this.#state !== HTTPRequestState.READY) throw new Error("Cannot change 'headers' of request that has already been opened.");
-    this.#headers = headers;
+
+    const collection = {} as Partial<{ [K in HTTPHeader]: string }>;
+    for (let [key, value] of Object.entries(headers)) {
+      collection[key.toLowerCase() as HTTPHeader] = value;
+    }
+    this.#headers = collection;
   }
 
   public get timeout() {
@@ -78,18 +83,18 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
   }
 
   constructor(initializer: HTTPRequestInitializer<Query, Body>) {
+    this.#state = HTTPRequestState.READY;
+    this.#aborted = false;
+    this.#progress = 0;
+    this.#request = new XMLHttpRequest();
+
     this.#path = initializer.path;
     this.#method = initializer.method;
 
     this.#query = initializer.query;
     this.#body = initializer.body;
-    this.#headers = initializer.headers ?? {};
     this.#timeout = initializer.timeout;
-
-    this.#state = HTTPRequestState.READY;
-    this.#aborted = false;
-    this.#progress = 0;
-    this.#request = new XMLHttpRequest();
+    this.headers = initializer.headers ?? {};
 
     this.onStart = initializer.onStart;
     this.onProgress = initializer.onProgress;
@@ -157,15 +162,28 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
 
       this.#request.onload = event => {
         if (this.#aborted) return;
-        this.#state = HTTPRequestState.DONE;
-        this.onComplete?.(event);
-        resolve(new HTTPResponse(this, HTTPStatusCode.OK, this.#request.response, HTTPRequest.getContentType(this.#request.getResponseHeader(HTTPHeader.ContentType))));
+        if (this.#request.status === HTTPStatusCode.OK) {
+          try {
+            this.#state = HTTPRequestState.DONE;
+            const response = new HTTPResponse(this, HTTPStatusCode.OK, this.#request.response);
+            this.onComplete?.(event);
+            resolve(response);
+          }
+          catch (error) {
+            this.#state = HTTPRequestState.ERROR;
+            reject(new HTTPResponse(this, HTTPStatusCode.Unknown, error));
+          }
+        }
+        else {
+          this.#state = HTTPRequestState.ERROR;
+          reject(new HTTPResponse(this, this.#request.status));
+        }
       };
 
       this.#request.onerror = () => {
         if (this.#aborted) return;
         this.#state = HTTPRequestState.ERROR;
-        reject(new HTTPResponse(this, HTTPStatusCode.Unknown));
+        reject(new HTTPResponse(this, HTTPStatusCode.Unknown, this.#request.response));
       };
 
       this.#request.ontimeout = () => {
@@ -181,34 +199,36 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
 
       this.#state = HTTPRequestState.READY;
       this.#request.open(this.#method, this.URL);
+
+      const content_type = this.getContentType();
+      if (content_type && !content_type?.includes("multipart/form-data")) {
+        this.#headers[HTTPHeader.ContentType] = content_type;
+      }
       this.attachHeaders();
 
-      if (this.canHaveBody()) {
-        const content_type = this.getContentType();
-        this.#request.setRequestHeader(HTTPHeader.ContentType, content_type);
-        this.#request.send(await this.getBody(content_type));
+      try {
+        this.#request.send(this.getBody(content_type));
       }
-      else {
-        this.#request.send();
+      catch (error) {
+        reject(error);
       }
     });
   }
 
   private attachHeaders() {
-    const method = this.#method.toLowerCase();
     const header_list = Object.getOwnPropertyNames(this.#headers) as HTTPHeader[];
-    for (let i = 0; i < header_list.length; i++) {
-      const header = header_list.at(i);
-      if (!header) continue;
-
-      const value = this.#headers[header];
-      if (!value || method === HTTPMethod.get || method === HTTPMethod.head) continue;
-
+    for (let key of header_list) {
+      const header = key.toLowerCase()
+      const value = this.#headers[key]?.toLowerCase();
+      if (!value || header === HTTPHeader.ContentType && value.includes("multipart/form-data")) continue;
       this.#request.setRequestHeader(header, value);
     }
   }
 
-  public async getBody(content_type: string = this.getContentType()) {
+  public getBody(content_type = this.getContentType()) {
+    if (!content_type) return null;
+    if (this.#body === undefined || this.#body === null) return null;
+
     switch (content_type) {
       case "application/json":
         return this.getBodyAsJSON();
@@ -226,8 +246,9 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
   }
 
   public getContentType() {
-    const content_type = this.#headers[HTTPHeader.ContentType]?.match(/^(?:application|audio|image|message|multipart|text|video|x-[\w-])\/[\w-]+/)?.at(0)?.toLowerCase() ?? "";
-    if (content_type) return content_type;
+    if (this.#body === null || this.#body === undefined || !this.method.localeCompare(HTTPMethod.TRACE, undefined, {sensitivity: "base"})) return null;
+
+    if (this.#headers[HTTPHeader.ContentType]) return this.#headers[HTTPHeader.ContentType]?.match(/^(?:application|audio|image|message|multipart|text|video|x-[\w-])\/[\w-]+/i)?.at(0)?.toLowerCase();
     if (this.#body instanceof ArrayBuffer) return "application/octet-stream";
     if (this.#body instanceof Blob) return this.#body.type;
     if (this.#body instanceof Document) return "text/html";
@@ -247,160 +268,162 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
       if (Array.isArray(item)) {
         for (let value of item) {
           if (value === undefined || value === null) continue;
-          query.append(key, String(value));
+          query.append(key, HTTPRequest.parseQueryPrimitive(value));
         }
       }
       else {
-        query.append(key, String(item));
+        query.append(key, HTTPRequest.parseQueryPrimitive(item));
       }
     }
 
     return query.toString();
   }
 
-  private canHaveBody() {
-    switch (this.#method) {
-      case HTTPMethod.TRACE:
-      case HTTPMethod.trace:
-        return false;
-      default:
-        return true;
-    }
+  public getResponseHeaders() {
+    if (this.#state !== HTTPRequestState.DONE) return {};
+
+    return this.#request.getAllResponseHeaders().split(/\r?\n/g).reduce(
+      (result, line) => {
+        const [key, value] = line.split(/\s*:\s*/g);
+        result[key.toLowerCase() as HTTPHeader] = value;
+        return result;
+      },
+      {} as { [K in HTTPHeader]: string }
+    );
   }
 
-  private async getBodyAsArrayBuffer() {
-    if (this.#body === undefined || this.#body === null) return null;
-    if (this.#body instanceof ArrayBuffer) return this.#body;
-    if (this.#body instanceof Blob) return await this.#body.arrayBuffer();
-    if (this.#body instanceof Document) return new TextEncoder().encode(this.#body.documentElement.outerHTML);
+  private getBodyAsArrayBuffer() {
+    if (this.#body instanceof ArrayBuffer || this.#body instanceof Blob || typeof this.#body === "string") return this.#body;
+    if (this.#body instanceof Document) return this.#body.documentElement.outerHTML;
+    if (typeof this.#body !== "object" || Object.getPrototypeOf(this.#body) === Object.prototype) return JSON.stringify(this.#body);
     throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to ArrayBuffer`);
   }
 
   private getBodyAsJSON() {
-    if (this.#body === undefined || this.#body === null) return null;
+    if (typeof this.#body === "string" || this.#body instanceof Blob) return this.#body;
+    if (this.#body instanceof Document) return this.#body.documentElement.outerHTML;
+    if (this.#body instanceof FormData) return JSON.stringify(HTTPRequest.toObjectFromFormData(this.#body));
+    if (this.#body instanceof URLSearchParams) return JSON.stringify(HTTPRequest.toObjectFromURLSearchParams(this.#body));
     if (typeof this.#body !== "object" || Object.getPrototypeOf(this.#body) === Object.prototype) return JSON.stringify(this.#body);
-    if (this.#body instanceof Document) return JSON.stringify(this.#body.documentElement.outerHTML);
-    if (this.#body instanceof FormData || this.#body instanceof URLSearchParams) return HTTPRequest.toJSONFromParams(this.#body);
-    throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to ArrayBuffer`);
+    throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to JSON`);
   }
 
-  private async getBodyAsDocument() {
-    if (this.#body === undefined || this.#body === null) return null;
-    if (this.#body instanceof Document) return this.#body;
-    if (this.#body instanceof Blob && this.#body.type.toLowerCase().includes("text/html")) return await this.#body.text();
+  private getBodyAsDocument() {
+    if (this.#body instanceof Document || this.#body instanceof Blob) return this.#body;
+    if (typeof this.#body !== "object") return String(this.#body);
     throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to Document`);
   }
 
   private getBodyAsFormData() {
-    if (this.#body === undefined || this.#body === null) return null;
-    if (this.#body instanceof FormData) return this.#body;
-    if (this.#body instanceof URLSearchParams) HTTPRequest.transferData(new FormData(), this.#body);
-    if (Object.getPrototypeOf(this.#body) === Object.prototype) HTTPRequest.transferData(new FormData(), this.#body as BodyObject);
+    if (this.#body instanceof FormData || this.#body instanceof Blob) return this.#body;
+    if (this.#body instanceof URLSearchParams) return HTTPRequest.toFormDataFromURLSearchParams(this.#body);
+    if (Object.getPrototypeOf(this.#body) === Object.prototype) return HTTPRequest.toFormDataFromObject(this.#body as BodyObject);
     throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to FormData`);
   }
 
   private getBodyAsURLSearchParams() {
-    if (this.#body === undefined || this.#body === null) return null;
-    if (this.#body instanceof URLSearchParams) return this.#body;
-    if (this.#body instanceof FormData) HTTPRequest.transferData(new URLSearchParams(), this.#body);
-    if (Object.getPrototypeOf(this.#body) === Object.prototype) HTTPRequest.transferData(new FormData(), this.#body as BodyObject);
+    if (this.#body instanceof URLSearchParams || this.#body instanceof Blob) return this.#body;
+    if (this.#body instanceof FormData) return HTTPRequest.toURLSearchParamsFromFormData(this.#body);
+    if (Object.getPrototypeOf(this.#body) === Object.prototype) return HTTPRequest.toURLSearchParamFromObject(this.#body as BodyObject);
     throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to URLSearchParams`);
   }
 
-  private async getBodyAsText() {
-    if (this.#body === undefined || this.#body === null) return null;
-    if (this.#body instanceof ArrayBuffer) return new TextDecoder().decode(this.#body);
-    if (this.#body instanceof Blob) return await this.#body.text();
-    if (this.#body instanceof Document) return this.#body.documentElement.outerHTML;
-    if (Object.getPrototypeOf(this.#body) === Object.prototype) return JSON.stringify(this.#body);
-    if (typeof this.#body !== "object") return String(this.#body);
+  private getBodyAsText() {
+    if (typeof this.#body === "string" || this.#body instanceof ArrayBuffer || this.#body instanceof Blob || this.#body instanceof Document) return this.#body;
+    if (typeof this.#body !== "object" || Object.getPrototypeOf(this.#body) === Object.prototype) return JSON.stringify(this.#body);
     throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to Text`);
   }
 
-  private static transferData(target: URLSearchParams | FormData, source: URLSearchParams | FormData | BodyObject) {
-    if (target instanceof URLSearchParams) {
-      if (source instanceof URLSearchParams || source instanceof FormData) {
-        for (let [key, item] of source.entries()) {
-          if (item instanceof File) continue;
-          target.append(key, item);
-        }
-      }
-      else {
-        for (let [key, item] of Object.entries(source)) {
-          if (item === undefined || item === null || item instanceof File) continue;
-          if (Array.isArray(item)) {
-            for (let i = 0; i < item.length; i++) {
-              const value = item.at(i);
-              if (value === undefined || value === null || value instanceof File) continue;
-              target.append(key, JSON.stringify(value));
-            }
-          }
-          else {
-            target.append(key, JSON.stringify(item));
-          }
-        }
-      }
-    }
-    else if (target instanceof FormData) {
-      if (source instanceof URLSearchParams || source instanceof FormData) {
-        for (let [key, item] of source.entries()) {
-          target.append(key, item);
-        }
-      }
-      else {
-        for (let [key, item] of Object.entries(source)) {
-          if (item === undefined || item === null) continue;
-          if (Array.isArray(item)) {
-            for (let i = 0; i < item.length; i++) {
-              const value = item.at(i);
-              if (value === undefined || value === null) continue;
-              target.append(key, JSON.stringify(value));
-            }
-          }
-          else {
-            target.append(key, JSON.stringify(item));
-          }
-        }
-      }
-    }
+  private static parseQueryPrimitive(value: string | boolean | number | Date) {
+    if (typeof value === "string") return value;
+    if (typeof value === "boolean") return value ? "1" : "0";
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
 
+  private static parseBodyPrimitive(value: BodyPrimitive | BodyObject) {
+    if (typeof value === "string") return value;
+    if (typeof value === "boolean") return value ? "1" : "0";
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
+
+  private static toFormDataFromURLSearchParams(source: URLSearchParams) {
+    const target = new FormData();
+    for (let [key, item] of source.entries()) {
+      target.append(key, item);
+    }
     return target;
   }
 
-  private static toJSONFromParams(params: URLSearchParams | FormData) {
+  private static toFormDataFromObject(source: BodyObject) {
+    const target = new FormData();
+    for (let [key, item] of Object.entries(source)) {
+      this.appendObjectValue(target, key, item);
+    }
+    return target;
+  }
+
+  private static toURLSearchParamsFromFormData(source: FormData) {
+    const target = new URLSearchParams();
+    for (let [key, item] of source.entries()) {
+      if (!(item instanceof File)) target.append(key, item);
+    }
+    return target;
+  }
+
+  private static toURLSearchParamFromObject(source: BodyObject) {
+    const target = new URLSearchParams();
+    for (let [key, item] of Object.entries(source)) {
+      this.appendObjectValue(target, key, item);
+    }
+    return target;
+  }
+
+  private static appendObjectValue(target: FormData | URLSearchParams, key: string, source: Many<BodyPrimitive | BodyObject>) {
+    if (source === undefined || source === null) return;
+    if (Array.isArray(source)) {
+      return source.forEach(value => target.append(key, HTTPRequest.parseBodyPrimitive(value)));
+    }
+    target.append(key, HTTPRequest.parseBodyPrimitive(source));
+  }
+
+  private static toObjectFromFormData(params: FormData) {
     const object = {} as {[key: string]: string | string[]};
     const entries = params.entries();
 
     for (let [key, item] of entries) {
       if (item === undefined || item === null || item instanceof File) continue;
-      const value = object[key];
-      if (value === undefined) {
-        object[key] = item;
-      }
-      else if (!Array.isArray(value)) {
-        object[key] = [value, item];
-      }
-      if (Array.isArray(value)) {
-        value.push(item);
-      }
+      const current = object[key];
+      object[key] = current === undefined ? item : Array.isArray(current) ? [...current, item] : [current, item];
     }
 
-    return JSON.stringify(object);
+    return object;
   }
 
-  private static getContentType(content_type?: string | null) {
-    return content_type?.match(/^(?:application|audio|image|message|multipart|text|video|x-[\w-])\/[\w-]+/)?.at(0)?.toLowerCase();
+  private static toObjectFromURLSearchParams(params: URLSearchParams) {
+    const object = {} as {[key: string]: string | string[]};
+    const entries = params.entries();
+
+    for (let [key, item] of entries) {
+      if (item === undefined || item === null) continue;
+      const current = object[key];
+      object[key] = current === undefined ? item : Array.isArray(current) ? [...current, item] : [current, item];
+    }
+
+    return object;
   }
+
 }
 
 export type HeaderCollection = Partial<{ [K in HTTPHeader]: string }>
 
-export type QueryData = undefined | null | URLSearchParams | {[key: string]: Many<string | number | boolean | null | undefined>}
+export type QueryData = undefined | null | string | URLSearchParams | {[key: string]: Many<string | number | boolean | null | undefined | Date>}
 
 export type BodyData = BodyNative | BodyPrimitive | BodyObject
-export type BodyObject = {[key: string]: Many<BodyObject | File | Date | string | boolean | number | null | undefined>}
-export type BodyNative = FormData | URLSearchParams | Document | Blob | ArrayBuffer
-export type BodyPrimitive = string | boolean | number | null | undefined
+export type BodyObject = {[key: string]: Many<BodyObject | BodyPrimitive>}
+export type BodyNative = FormData | URLSearchParams | Document | Blob | ArrayBuffer | File
+export type BodyPrimitive = Date | string | boolean | number | null | undefined
 
 export type ProgressEventHandler = (event: ProgressEvent) => void
 

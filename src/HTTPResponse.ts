@@ -1,21 +1,23 @@
 import {HTTPRequestState} from "./HTTPRequestState";
-import {HTTPStatusCode, HTTPStatusMessage, HTTPMethod} from "@noxy/http-utility";
-import HTTPRequest from "./HTTPRequest";
+import {HTTPStatusCode, HTTPStatusMessage, HTTPMethod, HTTPHeader} from "@noxy/http-utility";
+import HTTPRequest, {HeaderCollection} from "./HTTPRequest";
 
 export class HTTPResponse<Response = any> {
 
-  success: boolean;
-  status: HTTPStatusCode;
-  state: HTTPRequestState;
-  message: string;
-  data: Response | null;
-  path: string;
-  method: keyof typeof HTTPMethod | HTTPMethod;
+  public success: boolean;
+  public status: HTTPStatusCode;
+  public state: HTTPRequestState;
+  public message: string;
+  public data: Response | null;
+  public path: string;
+  public method: keyof typeof HTTPMethod | HTTPMethod;
+  public headers: HeaderCollection;
 
-  constructor(request: HTTPRequest, status: HTTPStatusCode, data?: Response, type?: string | null) {
+  constructor(request: HTTPRequest, status: HTTPStatusCode, data?: Response) {
     this.method = request.method;
     this.path = request.URL;
     this.state = request.state;
+    this.headers = request.getResponseHeaders();
 
     this.success = status === HTTPStatusCode.OK;
     this.status = status;
@@ -33,20 +35,29 @@ export class HTTPResponse<Response = any> {
       this.message = "No message could be provided.";
     }
 
-    this.data = this.parseData(type, data);
+    try {
+      this.data = this.parseData(data);
+    }
+    catch (error) {
+      this.data = (error as Error).message as unknown as Response;
+    }
   }
 
-  private parseData(type?: string | null, data?: Response) {
-    if (data === undefined || data === null) return null;
-    if (type?.includes("application/json")) {
-      return JSON.parse(String(data));
+  private parseData(data?: Response) {
+    if (typeof data !== "string") return null;
+
+    const type = this.headers[HTTPHeader.ContentType]?.toLowerCase() ?? "";
+    if (type.includes("application/json")) {
+      return JSON.parse(data);
     }
-    else if (type?.includes("text/plain")) {
-      return data;
+
+    if (type.includes("text/html")) {
+      const doc = document.implementation.createHTMLDocument();
+      doc.documentElement.innerHTML = data;
+      return doc;
     }
-    else {
-      return null;
-    }
+
+    return data;
   }
 }
 

@@ -2,21 +2,52 @@ import Puppeteer from "puppeteer";
 import Test from "./Variables";
 import Express from "express";
 import BodyParser from "body-parser";
+import Multer from "multer";
+import FS from "fs";
 
 beforeAll(async () => {
   Test.application = Express();
   Test.application.use(BodyParser.urlencoded({extended: false}));
   Test.application.use(BodyParser.json());
+  Test.application.use(BodyParser.text({type: "text/plain"}));
   Test.application.use(BodyParser.text({type: "text/html"}));
+  Test.application.use(BodyParser.text({type: "application/octet-stream"}));
 
-  Test.application.all("*", async (request: Express.Request, response: Express.Response) => {
-    const response_value = {
-      method: request.method,
-      query:  request.query,
-      body:   request.body
-    };
+  function uploadMW(request: Express.Request, response: Express.Response, next: Express.NextFunction) {
+    Multer({dest: "./files"}).any()(request, response, (error) => {
+      if (error) {
+        console.log(error);
+      }
+    });
+    next();
+  }
 
-    setTimeout(() => response.status(200).json(response_value), 10);
+  Test.application.all("*", uploadMW, async (request: Express.Request, response: Express.Response) => {
+    response.status(200);
+
+    setTimeout(() => {
+      const type = request.headers["content-type"]?.toLowerCase() ?? "";
+      if (type.includes("text/plain") || type.includes("text/html") || type.includes("application/octet-stream")) {
+        response.type(type);
+        response.send(request.body);
+      }
+      else {
+        const files = [] as {name: string, data: string}[];
+        if (Array.isArray(request.files)) {
+          for (let file of request.files) {
+            files.push({name: file.originalname, data: FS.readFileSync(file.path).toString()});
+          }
+        }
+
+        response.json({
+          header: type,
+          method: request.method,
+          query:  request.query,
+          body:   request.body,
+          files:  files
+        });
+      }
+    }, 10);
   });
 
   Test.server = Test.application.listen(Test.constants.port);
@@ -32,7 +63,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   Test.page = await Test.browser.newPage();
-  Test.page.on("console", message => console.log(message.text()));
+  // Test.page.on("console", message => console.log(message.text())); // Uncomment for debugging
   await Test.page.addScriptTag({path: "./dist/umd/index.js"});
 });
 
