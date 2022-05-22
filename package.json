@@ -1,7 +1,7 @@
 {
   "name": "@noxy/http-request",
   "author": "oscelest",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "Basic HTTP request structured as a class.",
   "license": "MIT",
   "repository": {
