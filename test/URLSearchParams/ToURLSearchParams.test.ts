@@ -12,6 +12,9 @@ test("URLSearchParamsToURLSearchParams", async () => {
       path:    constants.path,
       method:  "POST",
       body:    params,
+      headers: {
+        "content-type": "application/x-www-form-urlencoded"
+      }
     }).send();
   }, Test.constants);
 

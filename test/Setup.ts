@@ -33,7 +33,7 @@ beforeAll(async () => {
       }
       else {
         const files = [] as {name: string, data: string}[];
-        if (Array.isArray(request.files)) {
+        if (Array.isArray(request.files) && request.files.length) {
           for (let file of request.files) {
             files.push({name: file.originalname, data: FS.readFileSync(file.path).toString()});
           }
