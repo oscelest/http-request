@@ -14,4 +14,5 @@ module.exports = {
   setupFilesAfterEnv: [
     "./test/Setup.ts",
   ],
+  testTimeout: 15000,
 };
