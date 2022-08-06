@@ -2,13 +2,20 @@
   "compilerOptions": {
     "allowSyntheticDefaultImports":     true,
     "baseUrl":                          ".",
+    "declaration":                      true,
+    "declarationDir":                   "types",
     "esModuleInterop":                  true,
+    "emitDeclarationOnly":              true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules":                  true,
+    "importHelpers":                    true,
     "module":                           "ESNext",
     "moduleResolution":                 "Node",
     "noFallthroughCasesInSwitch":       true,
     "noUnusedLocals":                   true,
+    "outDir":                           "dist",
+    "skipLibCheck":                     true,
+    "sourceMap":                        true,
     "strict":                           true,
     "strictPropertyInitialization":     false,
     "target":                           "ES2017",
@@ -20,8 +27,8 @@
     ]
   },
   "include":         [
-    "**/*.ts",
-    "**/*.tsx"
+    "src/*.ts",
+    "src/*.tsx"
   ],
   "exclude":         [
     "node_modules"

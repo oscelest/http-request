@@ -63,7 +63,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   Test.page = await Test.browser.newPage();
-  // Test.page.on("console", message => console.log(message.text())); // Uncomment for debugging
+  Test.page.on("console", message => console.log(message.text())); // Uncomment for debugging
   await Test.page.addScriptTag({path: "./dist/umd/index.js"});
 });
 

@@ -6,11 +6,11 @@ import {Many} from "@noxy/utility-types";
 export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Body extends BodyData = BodyData> {
 
   // Modifiable properties
-  #body?: Body;
-  #query?: Query;
+  readonly #body?: Body;
+  readonly #query?: Query;
   #path: string;
   #method: keyof typeof HTTPMethod | HTTPMethod;
-  #headers: HeaderCollection;
+  #headers!: HeaderCollection;
   #timeout?: number;
 
   // Internal properties

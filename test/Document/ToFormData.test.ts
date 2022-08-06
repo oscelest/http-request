@@ -4,7 +4,7 @@ import Test from "../Variables";
 test("DocumentToFormData", async () => {
   await Test.page.addScriptTag({path: "./test/.scripts/createDocument.js"});
 
-  const response = await Test.page.evaluate<(variable: typeof Test.constants) => Promise<string | HTTPResponse>>(async constants => {
+  const response = await Test.page.evaluate<(typeof Test.constants)[],(variable: typeof Test.constants) => Promise<string | HTTPResponse>>(async constants => {
     const {HTTPRequest} = window["http-request"];
     const doc = window.createDocument(constants);
 
