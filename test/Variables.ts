@@ -17,13 +17,13 @@ export module Test {
     port: 7327,
     path: "http://localhost:7327",
 
-    string:   "string",
-    number:   123456,
-    boolean:  true,
-    json:     {"string": "string", "number": 123456, "boolean": true, object: {"key": "value"}, array: ["value1", "value2"]},
+    string: "string",
+    number: 123456,
+    boolean: true,
+    json: {"string": "string", "number": 123456, "boolean": true, object: {"key": "value"}, array: ["value1", "value2"]},
     multiple: ["string", 123456, true],
-    date:     new Date(1650000000000).toISOString(),
-    file:     {
+    date: new Date(1650000000000).toISOString(),
+    file: {
       name: "test-file.txt",
       data: "This is a test file."
     }

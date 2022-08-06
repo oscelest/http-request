@@ -5,6 +5,9 @@ import {Many} from "@noxy/utility-types";
 
 export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Body extends BodyData = BodyData> {
 
+  public onStart?: ProgressEventHandler;
+  public onProgress?: ProgressEventHandler;
+  public onComplete?: ProgressEventHandler;
   // Modifiable properties
   readonly #body?: Body;
   readonly #query?: Query;
@@ -12,7 +15,6 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
   #method: keyof typeof HTTPMethod | HTTPMethod;
   #headers!: HeaderCollection;
   #timeout?: number;
-
   // Internal properties
   #state: HTTPRequestState;
   #request: XMLHttpRequest;
@@ -20,9 +22,24 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
   #progress: number;
   #promise?: Promise<HTTPResponse<Response>>;
 
-  public onStart?: ProgressEventHandler;
-  public onProgress?: ProgressEventHandler;
-  public onComplete?: ProgressEventHandler;
+  constructor(initializer: HTTPRequestInitializer<Query, Body>) {
+    this.#state = HTTPRequestState.READY;
+    this.#aborted = false;
+    this.#progress = 0;
+    this.#request = new XMLHttpRequest();
+
+    this.#path = initializer.path;
+    this.#method = initializer.method;
+
+    this.#query = initializer.query;
+    this.#body = initializer.body;
+    this.#timeout = initializer.timeout;
+    this.headers = initializer.headers ?? {};
+
+    this.onStart = initializer.onStart;
+    this.onProgress = initializer.onProgress;
+    this.onComplete = initializer.onComplete;
+  }
 
   public get URL() {
     const params = this.getQueryString();
@@ -82,23 +99,84 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
     this.#timeout = ms;
   }
 
-  constructor(initializer: HTTPRequestInitializer<Query, Body>) {
-    this.#state = HTTPRequestState.READY;
-    this.#aborted = false;
-    this.#progress = 0;
-    this.#request = new XMLHttpRequest();
+  private static parseQueryPrimitive(value: string | boolean | number | Date) {
+    if (typeof value === "string") return value;
+    if (typeof value === "boolean") return value ? "1" : "0";
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
 
-    this.#path = initializer.path;
-    this.#method = initializer.method;
+  private static parseBodyPrimitive(value: BodyPrimitive | BodyObject) {
+    if (typeof value === "string") return value;
+    if (typeof value === "boolean") return value ? "1" : "0";
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
 
-    this.#query = initializer.query;
-    this.#body = initializer.body;
-    this.#timeout = initializer.timeout;
-    this.headers = initializer.headers ?? {};
+  private static toFormDataFromURLSearchParams(source: URLSearchParams) {
+    const target = new FormData();
+    for (let [key, item] of source.entries()) {
+      target.append(key, item);
+    }
+    return target;
+  }
 
-    this.onStart = initializer.onStart;
-    this.onProgress = initializer.onProgress;
-    this.onComplete = initializer.onComplete;
+  private static toFormDataFromObject(source: BodyObject) {
+    const target = new FormData();
+    for (let [key, item] of Object.entries(source)) {
+      this.appendObjectValue(target, key, item);
+    }
+    return target;
+  }
+
+  private static toURLSearchParamsFromFormData(source: FormData) {
+    const target = new URLSearchParams();
+    for (let [key, item] of source.entries()) {
+      if (!(item instanceof File)) target.append(key, item);
+    }
+    return target;
+  }
+
+  private static toURLSearchParamFromObject(source: BodyObject) {
+    const target = new URLSearchParams();
+    for (let [key, item] of Object.entries(source)) {
+      this.appendObjectValue(target, key, item);
+    }
+    return target;
+  }
+
+  private static appendObjectValue(target: FormData | URLSearchParams, key: string, source: Many<BodyPrimitive | BodyObject>) {
+    if (source === undefined || source === null) return;
+    if (Array.isArray(source)) {
+      return source.forEach(value => target.append(key, HTTPRequest.parseBodyPrimitive(value)));
+    }
+    target.append(key, HTTPRequest.parseBodyPrimitive(source));
+  }
+
+  private static toObjectFromFormData(params: FormData) {
+    const object = {} as {[key: string]: string | string[]};
+    const entries = params.entries();
+
+    for (let [key, item] of entries) {
+      if (item === undefined || item === null || item instanceof File) continue;
+      const current = object[key];
+      object[key] = current === undefined ? item : Array.isArray(current) ? [...current, item] : [current, item];
+    }
+
+    return object;
+  }
+
+  private static toObjectFromURLSearchParams(params: URLSearchParams) {
+    const object = {} as {[key: string]: string | string[]};
+    const entries = params.entries();
+
+    for (let [key, item] of entries) {
+      if (item === undefined || item === null) continue;
+      const current = object[key];
+      object[key] = current === undefined ? item : Array.isArray(current) ? [...current, item] : [current, item];
+    }
+
+    return object;
   }
 
   public setQuery(query: QueryData) {
@@ -108,12 +186,12 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
 
     return new HTTPRequest({
       query,
-      path:       this.#path,
-      method:     this.#method,
-      body:       this.#body,
-      headers:    this.#headers,
-      timeout:    this.#timeout,
-      onStart:    this.onStart,
+      path: this.#path,
+      method: this.#method,
+      body: this.#body,
+      headers: this.#headers,
+      timeout: this.#timeout,
+      onStart: this.onStart,
       onProgress: this.onProgress,
       onComplete: this.onComplete
     });
@@ -126,12 +204,12 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
 
     return new HTTPRequest({
       body,
-      path:       this.#path,
-      method:     this.#method,
-      query:      this.#query,
-      headers:    this.#headers,
-      timeout:    this.#timeout,
-      onStart:    this.onStart,
+      path: this.#path,
+      method: this.#method,
+      query: this.#query,
+      headers: this.#headers,
+      timeout: this.#timeout,
+      onStart: this.onStart,
       onProgress: this.onProgress,
       onComplete: this.onComplete
     });
@@ -215,16 +293,6 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
     });
   }
 
-  private attachHeaders() {
-    const header_list = Object.getOwnPropertyNames(this.#headers) as HTTPHeader[];
-    for (let key of header_list) {
-      const header = key.toLowerCase()
-      const value = this.#headers[key]?.toLowerCase();
-      if (!value || header === HTTPHeader.ContentType && value.includes("multipart/form-data")) continue;
-      this.#request.setRequestHeader(header, value);
-    }
-  }
-
   public getBody(content_type = this.getContentType()) {
     if (!content_type) return null;
     if (this.#body === undefined || this.#body === null) return null;
@@ -292,6 +360,16 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
     );
   }
 
+  private attachHeaders() {
+    const header_list = Object.getOwnPropertyNames(this.#headers) as HTTPHeader[];
+    for (let key of header_list) {
+      const header = key.toLowerCase();
+      const value = this.#headers[key]?.toLowerCase();
+      if (!value || header === HTTPHeader.ContentType && value.includes("multipart/form-data")) continue;
+      this.#request.setRequestHeader(header, value);
+    }
+  }
+
   private getBodyAsArrayBuffer() {
     if (this.#body instanceof ArrayBuffer || this.#body instanceof Blob || typeof this.#body === "string") return this.#body;
     if (this.#body instanceof Document) return this.#body.documentElement.outerHTML;
@@ -332,86 +410,6 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
     if (typeof this.#body === "string" || this.#body instanceof ArrayBuffer || this.#body instanceof Blob || this.#body instanceof Document) return this.#body;
     if (typeof this.#body !== "object" || Object.getPrototypeOf(this.#body) === Object.prototype) return JSON.stringify(this.#body);
     throw new Error(`Cannot convert '${typeof this.#body === "object" ? this.#body?.constructor.name : typeof this.#body}' to Text`);
-  }
-
-  private static parseQueryPrimitive(value: string | boolean | number | Date) {
-    if (typeof value === "string") return value;
-    if (typeof value === "boolean") return value ? "1" : "0";
-    if (value instanceof Date) return value.toISOString();
-    return String(value);
-  }
-
-  private static parseBodyPrimitive(value: BodyPrimitive | BodyObject) {
-    if (typeof value === "string") return value;
-    if (typeof value === "boolean") return value ? "1" : "0";
-    if (value instanceof Date) return value.toISOString();
-    return String(value);
-  }
-
-  private static toFormDataFromURLSearchParams(source: URLSearchParams) {
-    const target = new FormData();
-    for (let [key, item] of source.entries()) {
-      target.append(key, item);
-    }
-    return target;
-  }
-
-  private static toFormDataFromObject(source: BodyObject) {
-    const target = new FormData();
-    for (let [key, item] of Object.entries(source)) {
-      this.appendObjectValue(target, key, item);
-    }
-    return target;
-  }
-
-  private static toURLSearchParamsFromFormData(source: FormData) {
-    const target = new URLSearchParams();
-    for (let [key, item] of source.entries()) {
-      if (!(item instanceof File)) target.append(key, item);
-    }
-    return target;
-  }
-
-  private static toURLSearchParamFromObject(source: BodyObject) {
-    const target = new URLSearchParams();
-    for (let [key, item] of Object.entries(source)) {
-      this.appendObjectValue(target, key, item);
-    }
-    return target;
-  }
-
-  private static appendObjectValue(target: FormData | URLSearchParams, key: string, source: Many<BodyPrimitive | BodyObject>) {
-    if (source === undefined || source === null) return;
-    if (Array.isArray(source)) {
-      return source.forEach(value => target.append(key, HTTPRequest.parseBodyPrimitive(value)));
-    }
-    target.append(key, HTTPRequest.parseBodyPrimitive(source));
-  }
-
-  private static toObjectFromFormData(params: FormData) {
-    const object = {} as {[key: string]: string | string[]};
-    const entries = params.entries();
-
-    for (let [key, item] of entries) {
-      if (item === undefined || item === null || item instanceof File) continue;
-      const current = object[key];
-      object[key] = current === undefined ? item : Array.isArray(current) ? [...current, item] : [current, item];
-    }
-
-    return object;
-  }
-
-  private static toObjectFromURLSearchParams(params: URLSearchParams) {
-    const object = {} as {[key: string]: string | string[]};
-    const entries = params.entries();
-
-    for (let [key, item] of entries) {
-      if (item === undefined || item === null) continue;
-      const current = object[key];
-      object[key] = current === undefined ? item : Array.isArray(current) ? [...current, item] : [current, item];
-    }
-
-    return object;
   }
 
 }

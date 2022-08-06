@@ -42,9 +42,9 @@ beforeAll(async () => {
         response.json({
           header: type,
           method: request.method,
-          query:  request.query,
-          body:   request.body,
-          files:  files
+          query: request.query,
+          body: request.body,
+          files: files
         });
       }
     }, 10);

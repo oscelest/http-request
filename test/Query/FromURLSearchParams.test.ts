@@ -15,8 +15,8 @@ test("FromURLSearchParams", async () => {
 
     return await new HTTPRequest({
       method: "GET",
-      path:   constants.path,
-      query:  params
+      path: constants.path,
+      query: params
     }).send();
   }, Test.constants);
 

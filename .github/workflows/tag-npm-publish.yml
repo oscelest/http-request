@@ -46,7 +46,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
   update-version:
-    needs: [get-version, publish-npm]
+    needs: [ get-version, publish-npm ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
