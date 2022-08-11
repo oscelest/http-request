@@ -85,7 +85,7 @@ export class HTTPRequest<Response = any, Query extends QueryData = QueryData, Bo
 
     const collection = {} as Partial<{ [K in HTTPHeader]: string }>;
     for (let [key, value] of Object.entries(headers)) {
-      collection[key.toLowerCase() as HTTPHeader] = value;
+      if (key && value !== undefined) collection[key.toLowerCase() as HTTPHeader] = value;
     }
     this.#headers = collection;
   }
